@@ -42,7 +42,7 @@ const float resistorOhm = 220.0;
 //
 // This value can later be replaced with the voltage
 // measured between Arduino 5V and Arduino GND.
-const float arduinoReferenceVoltage = 5.0;
+const float arduinoReferenceVoltage = 4.6;
 
 // =====================================================
 // CALIBRATION
@@ -70,13 +70,13 @@ const float tankCapacityLiters = 10000.0;
 // =====================================================
 
 // Number of ADC measurements used for averaging.
-const int numberOfMeasurements = 50;
+const int numberOfMeasurements = 200;
 
 // Delay between individual ADC measurements.
 const int measurementDelayMs = 5;
 
 // Perform a new sensor measurement every second.
-const unsigned long sensorMeasurementIntervalMs = 1000UL;
+const unsigned long sensorMeasurementIntervalMs = 5000UL;
 
 // =====================================================
 // CURRENT STATE
@@ -246,11 +246,12 @@ void updateLcdDisplay() {
 
   if (calibrationValid && sensorActive) {
     // Example: "42.5%  4250L"
-    lcd.print(percentage, 1);
+    lcd.print(F("Percentage: "));
+    lcd.print(percentage, 0);
     lcd.print(F("% "));
 
-    lcd.print(liters, 0);
-    lcd.print(F("L"));
+    //lcd.print(liters, 0);
+    //lcd.print(F("L"));
   } else {
     lcd.print(F("Sensor fault"));
   }
