@@ -49,7 +49,7 @@ const float arduinoReferenceVoltage = 4.6;
 // =====================================================
 
 // ADC value measured when the tank is empty.
-const int adcEmpty = 196;
+const int adcEmpty = 235;
 
 // ADC value measured when the tank is full.
 //
