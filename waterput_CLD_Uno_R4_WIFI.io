@@ -1,572 +1,1053 @@
-#include <SPI.h>
-#include <Ethernet.h>
+#include <WiFiS3.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-// =====================================================
-// NETWORK SETTINGS
-// =====================================================
+// ============================================================
+// WiFi configuration
+// ============================================================
 
-byte mac[] = {
-  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
-};
+const char* wifiSsid = "";
+const char* wifiPassword = "";
 
-IPAddress ip(172, 16, 42, 66);
+WiFiServer server(80);
 
-EthernetServer server(80);
+// ============================================================
+// LCD
+// ============================================================
 
-// =====================================================
-// LCD SETTINGS
-// =====================================================
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// Common I2C LCD addresses are 0x27 and 0x3F.
-const byte lcdAddress = 0x27;
-const byte lcdColumns = 16;
-const byte lcdRows = 2;
+// Some LCD modules use 0x3F instead of 0x27.
 
-LiquidCrystal_I2C lcd(lcdAddress, lcdColumns, lcdRows);
-
-// Refresh the LCD once every minute.
-const unsigned long lcdRefreshIntervalMs = 60000UL;
-
-// =====================================================
-// SENSOR SETTINGS
-// =====================================================
+// ============================================================
+// Pins
+// ============================================================
 
 const int sensorPin = A0;
+const int lcdButtonPin = 2;
 
-// Resistor used to convert the 4-20 mA signal to voltage.
-const float resistorOhm = 220.0;
+// ============================================================
+// ADC / sensor configuration
+// ============================================================
 
-// Arduino analog reference voltage.
-//
-// This value can later be replaced with the voltage
-// measured between Arduino 5V and Arduino GND.
-const float arduinoReferenceVoltage = 4.6;
+// Keep 10-bit ADC resolution for compatibility with
+// your previous calibration values.
+const int adcResolutionBits = 10;
+const int adcMaximum = 1023;
 
-// =====================================================
-// CALIBRATION
-// =====================================================
+// Measure the actual voltage between 5V and GND
+// on the UNO R4 and adjust this value if needed.
+const float arduinoReferenceVoltage = 5.00;
 
-// ADC value measured when the tank is empty.
-const int adcEmpty = 235;
+// Current loop measurement resistor.
+const float measurementResistorOhms = 220.0;
 
-// ADC value measured when the tank is full.
-//
-// Replace this example value with the real measured value.
+// Average 100 measurements.
+const int numberOfMeasurements = 100;
+
+// Existing calibration values.
+// Recalibration on the UNO R4 is recommended.
+const int adcEmpty = 196;
 const int adcFull = 820;
 
-// Actual water height when the tank is completely full.
+// Tank configuration.
 const float tankHeightCm = 250.0;
-
-// Total tank capacity.
-//
-// This calculation assumes that the volume increases
-// linearly with the water height.
 const float tankCapacityLiters = 10000.0;
 
-// =====================================================
-// MEASUREMENT SETTINGS
-// =====================================================
+// ============================================================
+// Timing
+// ============================================================
 
-// Number of ADC measurements used for averaging.
-const int numberOfMeasurements = 200;
-
-// Delay between individual ADC measurements.
-const int measurementDelayMs = 5;
-
-// Perform a new sensor measurement every second.
+// Sensor measurement every 5 seconds.
 const unsigned long sensorMeasurementIntervalMs = 5000UL;
 
-// =====================================================
-// CURRENT STATE
-// =====================================================
+// Refresh normal LCD display every 60 seconds.
+const unsigned long lcdRefreshIntervalMs = 60000UL;
 
-// Only the current ADC value is stored permanently.
-// Other values are calculated when required.
-int currentAdcValue = 0;
+// LCD stays on for 5 minutes after a button press.
+const unsigned long lcdOnTimeMs =
+  5UL * 60UL * 1000UL;
+
+// Button must be held for 5 seconds
+// to show WiFi information.
+const unsigned long buttonLongPressMs = 5000UL;
+
+// Show WiFi information for 20 seconds.
+const unsigned long wifiInfoDurationMs = 20000UL;
+
+// Switch between WiFi pages every 3 seconds.
+const unsigned long wifiPageIntervalMs = 3000UL;
+
+// Button debounce.
+const unsigned long buttonDebounceMs = 40UL;
+
+// ============================================================
+// Current sensor values
+// ============================================================
+
+float currentAdcValue = 0.0;
+float currentVoltage = 0.0;
+float currentCurrentMa = 0.0;
+
+float currentPercentage = 0.0;
+float currentHeightCm = 0.0;
+float currentHeightM = 0.0;
+float currentLiters = 0.0;
+
+bool sensorActive = false;
+
+// ============================================================
+// Timers
+// ============================================================
 
 unsigned long previousSensorMeasurementTime = 0;
 unsigned long previousLcdRefreshTime = 0;
 
-// =====================================================
-// SETUP
-// =====================================================
+unsigned long lcdActivatedTime = 0;
+
+unsigned long buttonPressedTime = 0;
+unsigned long lastButtonChangeTime = 0;
+
+unsigned long wifiInfoStartTime = 0;
+unsigned long previousWifiPageTime = 0;
+
+// ============================================================
+// LCD state
+// ============================================================
+
+bool lcdBacklightOn = false;
+bool showWifiInfo = false;
+bool wifiInfoPage = false;
+
+// ============================================================
+// Button state
+// ============================================================
+
+bool lastRawButtonState = HIGH;
+bool stableButtonState = HIGH;
+bool buttonLongPressHandled = false;
+
+// ============================================================
+// Setup
+// ============================================================
 
 void setup() {
-  Serial.begin(9600);
-
-  Serial.println();
-  Serial.println(F("Water tank monitor starting..."));
-
-  initializeLcd();
-  initializeEthernet();
-
-  // Perform the first measurement immediately.
-  currentAdcValue = readAverageAdc();
-
-  // Show the first values immediately.
-  updateLcdDisplay();
-
-  previousSensorMeasurementTime = millis();
-  previousLcdRefreshTime = millis();
-}
-
-// =====================================================
-// MAIN PROGRAM
-// =====================================================
-
-void loop() {
-  updateSensorAtInterval();
-  updateLcdAtInterval();
-  handleEthernetClient();
-}
-
-// =====================================================
-// LCD INITIALIZATION
-// =====================================================
-
-void initializeLcd() {
-  Wire.begin();
-
-  lcd.init();
-  lcd.backlight();
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print(F("Water tank"));
-  lcd.setCursor(0, 1);
-  lcd.print(F("Starting..."));
+  Serial.begin(115200);
 
   delay(1000);
 
-  clearLcdLine(0);
-  clearLcdLine(1);
-}
+  Serial.println();
+  Serial.println(
+    "Water Tank Monitor - UNO R4 WiFi"
+  );
+  Serial.println(
+    "--------------------------------"
+  );
 
-// =====================================================
-// ETHERNET INITIALIZATION
-// =====================================================
+  // ----------------------------------------------------------
+  // ADC
+  // ----------------------------------------------------------
 
-void initializeEthernet() {
-  Ethernet.begin(mac, ip);
+  analogReadResolution(adcResolutionBits);
 
-  if (Ethernet.hardwareStatus() == EthernetNoHardware) {
-    Serial.println(F("ERROR: Ethernet shield not found."));
+  // ----------------------------------------------------------
+  // Button
+  // ----------------------------------------------------------
 
-    clearLcdLine(0);
-    lcd.setCursor(0, 0);
-    lcd.print(F("Ethernet error"));
+  pinMode(lcdButtonPin, INPUT_PULLUP);
 
-    clearLcdLine(1);
-    lcd.setCursor(0, 1);
-    lcd.print(F("Shield missing"));
+  // ----------------------------------------------------------
+  // LCD
+  // ----------------------------------------------------------
 
-    while (true) {
-      delay(1);
-    }
-  }
+  lcd.init();
+  lcd.clear();
+  lcd.noBacklight();
 
-  if (Ethernet.linkStatus() == LinkOFF) {
-    Serial.println(
-      F("WARNING: Ethernet cable not connected.")
-    );
-  }
+  // ----------------------------------------------------------
+  // First sensor measurement
+  // ----------------------------------------------------------
+
+  updateSensorMeasurement();
+
+  // ----------------------------------------------------------
+  // WiFi
+  // ----------------------------------------------------------
+
+  connectToWiFi();
+
+  // ----------------------------------------------------------
+  // HTTP server
+  // ----------------------------------------------------------
 
   server.begin();
 
-  Serial.print(F("Web server active at: http://"));
-  Serial.println(Ethernet.localIP());
+  Serial.println("HTTP server started.");
+  Serial.println();
 }
 
-// =====================================================
-// PERIODIC SENSOR UPDATE
-// =====================================================
+// ============================================================
+// Main loop
+// ============================================================
 
-void updateSensorAtInterval() {
-  unsigned long currentTime = millis();
+void loop() {
+  maintainWiFiConnection();
+
+  updateSensorAtInterval();
+
+  handleLcdButton();
+
+  updateLcdAtInterval();
+
+  handleHttpClient();
+}
+
+// ============================================================
+// WiFi
+// ============================================================
+
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(wifiSsid);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    WiFi.begin(wifiSsid, wifiPassword);
+
+    unsigned long connectionStart =
+      millis();
+
+    while (
+      WiFi.status() != WL_CONNECTED &&
+      millis() - connectionStart < 15000UL
+    ) {
+      delay(500);
+      Serial.print(".");
+    }
+
+    Serial.println();
+
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println(
+        "WiFi connection failed. Retrying..."
+      );
+
+      delay(3000);
+    }
+  }
+
+  Serial.println("WiFi connected.");
+
+  printNetworkInformation();
+}
+
+void maintainWiFiConnection() {
+  static unsigned long
+    previousReconnectAttempt = 0;
+
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
 
   if (
-    currentTime - previousSensorMeasurementTime >=
+    millis() - previousReconnectAttempt <
+    10000UL
+  ) {
+    return;
+  }
+
+  previousReconnectAttempt = millis();
+
+  Serial.println(
+    "WiFi disconnected. Reconnecting..."
+  );
+
+  WiFi.begin(wifiSsid, wifiPassword);
+}
+
+void printNetworkInformation() {
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  Serial.print("Signal strength: ");
+  Serial.print(WiFi.RSSI());
+  Serial.println(" dBm");
+
+  Serial.println();
+
+  Serial.print("Open in browser: http://");
+  Serial.println(WiFi.localIP());
+}
+
+// ============================================================
+// Sensor
+// ============================================================
+
+float readAverageAdc() {
+  // Discard first ADC reading.
+  analogRead(sensorPin);
+
+  delay(5);
+
+  unsigned long total = 0;
+
+  for (
+    int i = 0;
+    i < numberOfMeasurements;
+    i++
+  ) {
+    total += analogRead(sensorPin);
+
+    delay(2);
+  }
+
+  return
+    (float)total /
+    numberOfMeasurements;
+}
+
+void updateSensorMeasurement() {
+  currentAdcValue = readAverageAdc();
+
+  currentVoltage =
+    currentAdcValue *
+    arduinoReferenceVoltage /
+    adcMaximum;
+
+  currentCurrentMa =
+    (
+      currentVoltage /
+      measurementResistorOhms
+    ) *
+    1000.0;
+
+  // Consider sensor active above about 3 mA.
+  sensorActive =
+    currentCurrentMa >= 3.0;
+
+  float calibrationRange =
+    adcFull - adcEmpty;
+
+  if (calibrationRange <= 0) {
+    currentPercentage = 0.0;
+    currentHeightCm = 0.0;
+    currentHeightM = 0.0;
+    currentLiters = 0.0;
+
+    return;
+  }
+
+  currentPercentage =
+    (
+      (
+        currentAdcValue -
+        adcEmpty
+      ) /
+      calibrationRange
+    ) *
+    100.0;
+
+  currentPercentage =
+    constrain(
+      currentPercentage,
+      0.0,
+      100.0
+    );
+
+  currentHeightCm =
+    tankHeightCm *
+    (
+      currentPercentage /
+      100.0
+    );
+
+  currentHeightM =
+    currentHeightCm /
+    100.0;
+
+  currentLiters =
+    tankCapacityLiters *
+    (
+      currentPercentage /
+      100.0
+    );
+
+  printSensorMeasurement();
+}
+
+void updateSensorAtInterval() {
+  unsigned long now = millis();
+
+  if (
+    now -
+    previousSensorMeasurementTime >=
     sensorMeasurementIntervalMs
   ) {
-    previousSensorMeasurementTime = currentTime;
+    previousSensorMeasurementTime = now;
 
-    currentAdcValue = readAverageAdc();
+    updateSensorMeasurement();
   }
 }
 
-// =====================================================
-// PERIODIC LCD UPDATE
-// =====================================================
+// ============================================================
+// Serial output
+// ============================================================
 
-void updateLcdAtInterval() {
-  unsigned long currentTime = millis();
+void printSensorMeasurement() {
+  Serial.print("ADC: ");
+  Serial.print(currentAdcValue, 1);
+
+  Serial.print(" | Voltage: ");
+  Serial.print(currentVoltage, 3);
+  Serial.print(" V");
+
+  Serial.print(" | Current: ");
+  Serial.print(currentCurrentMa, 3);
+  Serial.print(" mA");
+
+  Serial.print(" | Water: ");
+  Serial.print(currentPercentage, 1);
+  Serial.print(" %");
+
+  Serial.print(" | Height: ");
+  Serial.print(currentHeightCm, 1);
+  Serial.print(" cm");
+
+  Serial.print(" | Volume: ");
+  Serial.print(currentLiters, 0);
+  Serial.println(" L");
+}
+
+// ============================================================
+// Button
+// ============================================================
+
+void handleLcdButton() {
+  bool rawButtonState =
+    digitalRead(lcdButtonPin);
+
+  unsigned long now = millis();
+
+  // ----------------------------------------------------------
+  // Detect raw button state change
+  // ----------------------------------------------------------
 
   if (
-    currentTime - previousLcdRefreshTime >=
+    rawButtonState !=
+    lastRawButtonState
+  ) {
+    lastButtonChangeTime = now;
+
+    lastRawButtonState =
+      rawButtonState;
+  }
+
+  // ----------------------------------------------------------
+  // Debounce
+  // ----------------------------------------------------------
+
+  if (
+    now -
+    lastButtonChangeTime >=
+    buttonDebounceMs
+  ) {
+    if (
+      stableButtonState !=
+      rawButtonState
+    ) {
+      stableButtonState =
+        rawButtonState;
+
+      // ------------------------------------------------------
+      // Button pressed
+      // ------------------------------------------------------
+
+      if (
+        stableButtonState ==
+        LOW
+      ) {
+        buttonPressedTime = now;
+
+        buttonLongPressHandled =
+          false;
+
+        // Short press immediately
+        // activates the LCD.
+        turnLcdOn();
+      }
+
+      // ------------------------------------------------------
+      // Button released
+      // ------------------------------------------------------
+
+      if (
+        stableButtonState ==
+        HIGH
+      ) {
+        buttonPressedTime = 0;
+
+        buttonLongPressHandled =
+          false;
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Long press
+  // ----------------------------------------------------------
+
+  if (
+    stableButtonState == LOW &&
+    !buttonLongPressHandled &&
+    buttonPressedTime > 0 &&
+    now -
+    buttonPressedTime >=
+    buttonLongPressMs
+  ) {
+    buttonLongPressHandled = true;
+
+    showWifiInformation();
+  }
+
+  // ----------------------------------------------------------
+  // Update WiFi diagnostic display
+  // ----------------------------------------------------------
+
+  if (showWifiInfo) {
+    updateWifiInformationDisplay();
+
+    if (
+      now -
+      wifiInfoStartTime >=
+      wifiInfoDurationMs
+    ) {
+      showWifiInfo = false;
+
+      updateLcdDisplay();
+
+      previousLcdRefreshTime =
+        now;
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Turn LCD off after 5 minutes
+  // ----------------------------------------------------------
+
+  if (
+    lcdBacklightOn &&
+    now -
+    lcdActivatedTime >=
+    lcdOnTimeMs
+  ) {
+    turnLcdOff();
+  }
+}
+
+// ============================================================
+// LCD on / off
+// ============================================================
+
+void turnLcdOn() {
+  lcdBacklightOn = true;
+
+  lcdActivatedTime = millis();
+
+  lcd.backlight();
+
+  // Do not overwrite WiFi screen
+  // when already showing WiFi info.
+  if (!showWifiInfo) {
+    updateLcdDisplay();
+  }
+
+  previousLcdRefreshTime =
+    millis();
+
+  Serial.println(
+    "LCD ON for 5 minutes."
+  );
+}
+
+void turnLcdOff() {
+  lcd.noBacklight();
+
+  lcdBacklightOn = false;
+
+  showWifiInfo = false;
+
+  Serial.println("LCD OFF.");
+}
+
+// ============================================================
+// WiFi information mode
+// ============================================================
+
+void showWifiInformation() {
+  lcd.backlight();
+
+  lcdBacklightOn = true;
+
+  // Restart 5-minute LCD timer.
+  lcdActivatedTime = millis();
+
+  showWifiInfo = true;
+
+  wifiInfoStartTime = millis();
+
+  previousWifiPageTime = 0;
+
+  wifiInfoPage = false;
+
+  Serial.println(
+    "Showing WiFi information."
+  );
+
+  updateWifiInformationDisplay();
+}
+
+void updateWifiInformationDisplay() {
+  unsigned long now = millis();
+
+  if (
+    previousWifiPageTime != 0 &&
+    now -
+    previousWifiPageTime <
+    wifiPageIntervalMs
+  ) {
+    return;
+  }
+
+  previousWifiPageTime = now;
+
+  wifiInfoPage =
+    !wifiInfoPage;
+
+  lcd.clear();
+
+  // ----------------------------------------------------------
+  // WiFi connected
+  // ----------------------------------------------------------
+
+  if (
+    WiFi.status() ==
+    WL_CONNECTED
+  ) {
+    if (wifiInfoPage) {
+      // Page 1:
+      // Connection status + SSID
+
+      lcd.setCursor(0, 0);
+      lcd.print("WiFi: CONNECTED");
+
+      lcd.setCursor(0, 1);
+      lcd.print("SSID:");
+
+      String ssid =
+        WiFi.SSID();
+
+      // 16-char LCD:
+      // "SSID:" uses 5 chars.
+      if (ssid.length() > 11) {
+        ssid =
+          ssid.substring(0, 11);
+      }
+
+      lcd.print(ssid);
+    } else {
+      // Page 2:
+      // IP address
+
+      lcd.setCursor(0, 0);
+      lcd.print("IP address:");
+
+      lcd.setCursor(0, 1);
+      lcd.print(
+        WiFi.localIP()
+      );
+    }
+  }
+
+  // ----------------------------------------------------------
+  // WiFi disconnected
+  // ----------------------------------------------------------
+
+  else {
+    if (wifiInfoPage) {
+      lcd.setCursor(0, 0);
+      lcd.print("WiFi: OFFLINE");
+
+      lcd.setCursor(0, 1);
+      lcd.print("SSID:");
+
+      String ssid =
+        wifiSsid;
+
+      if (ssid.length() > 11) {
+        ssid =
+          ssid.substring(0, 11);
+      }
+
+      lcd.print(ssid);
+    } else {
+      lcd.setCursor(0, 0);
+      lcd.print("No connection");
+
+      lcd.setCursor(0, 1);
+      lcd.print("No IP address");
+    }
+  }
+}
+
+// ============================================================
+// Normal LCD display
+// ============================================================
+
+void updateLcdAtInterval() {
+  if (!lcdBacklightOn) {
+    return;
+  }
+
+  // Do not overwrite WiFi information.
+  if (showWifiInfo) {
+    return;
+  }
+
+  unsigned long now = millis();
+
+  if (
+    now -
+    previousLcdRefreshTime >=
     lcdRefreshIntervalMs
   ) {
-    previousLcdRefreshTime = currentTime;
+    previousLcdRefreshTime = now;
 
     updateLcdDisplay();
   }
 }
 
-// =====================================================
-// LCD DISPLAY
-// =====================================================
-
 void updateLcdDisplay() {
-  float percentage =
-    calculatePercentage(currentAdcValue);
+  if (!lcdBacklightOn) {
+    return;
+  }
 
-  float liters =
-    calculateLiters(percentage);
+  lcd.clear();
 
-  float waterHeightCm =
-    calculateWaterHeightCm(percentage);
+  // ----------------------------------------------------------
+  // Line 1
+  // Example:
+  // 13% 1298L
+  // ----------------------------------------------------------
 
-  float voltage =
-    calculateVoltage(currentAdcValue);
-
-  float currentMilliampere =
-    calculateCurrentMilliampere(voltage);
-
-  bool calibrationValid =
-    adcFull > adcEmpty;
-
-  bool sensorActive =
-    currentMilliampere >= 3.5 &&
-    currentMilliampere <= 22.0;
-
-  // Clear and rewrite the complete first line.
-  clearLcdLine(0);
   lcd.setCursor(0, 0);
 
-  if (calibrationValid && sensorActive) {
-    // Example: "42.5%  4250L"
-    lcd.print(F("Percentage: "));
-    lcd.print(percentage, 0);
-    lcd.print(F("% "));
+  lcd.print(
+    currentPercentage,
+    0
+  );
 
-    //lcd.print(liters, 0);
-    //lcd.print(F("L"));
-  } else {
-    lcd.print(F("Sensor fault"));
-  }
+  lcd.print("% ");
 
-  // Clear and rewrite the complete second line.
-  clearLcdLine(1);
+  lcd.print(
+    currentLiters,
+    0
+  );
+
+  lcd.print("L");
+
+  // ----------------------------------------------------------
+  // Line 2
+  // Example:
+  // Height: 33cm
+  // ----------------------------------------------------------
+
   lcd.setCursor(0, 1);
 
-  if (calibrationValid && sensorActive) {
-    // Height is shown without decimal places.
-    // Example: "Height: 106cm"
-    lcd.print(F("Height: "));
-    lcd.print(waterHeightCm, 0);
-    lcd.print(F("cm"));
-  } else if (!calibrationValid) {
-    lcd.print(F("Calibration err"));
-  } else {
-    lcd.print(F("Height: ---cm"));
-  }
+  lcd.print("Height: ");
+
+  lcd.print(
+    currentHeightCm,
+    0
+  );
+
+  lcd.print("cm");
 }
 
-// =====================================================
-// CLEAR ONE LCD LINE
-// =====================================================
+// ============================================================
+// HTTP server
+// ============================================================
 
-void clearLcdLine(byte row) {
-  lcd.setCursor(0, row);
-  lcd.print(F("                "));
-}
-
-// =====================================================
-// ETHERNET CLIENT HANDLING
-// =====================================================
-
-void handleEthernetClient() {
-  EthernetClient client = server.available();
+void handleHttpClient() {
+  WiFiClient client =
+    server.available();
 
   if (!client) {
     return;
   }
 
-  Serial.println(F("New client connected."));
+  unsigned long connectionStart =
+    millis();
 
-  bool currentLineIsBlank = true;
-  unsigned long startTime = millis();
+  bool emptyLineReceived = false;
 
-  while (client.connected()) {
-
-    // Stop when the client does not complete the request
-    // within two seconds.
-    if (millis() - startTime > 2000UL) {
-      Serial.println(F("Client timeout."));
-      break;
-    }
-
+  while (
+    client.connected() &&
+    millis() -
+    connectionStart <
+    1000UL
+  ) {
     if (client.available()) {
-      char character = client.read();
+      char c = client.read();
 
-      // An empty line indicates the end of the HTTP request.
       if (
-        character == '\n' &&
-        currentLineIsBlank
+        c == '\n' &&
+        emptyLineReceived
       ) {
         sendJsonResponse(client);
+
         break;
       }
 
-      if (character == '\n') {
-        currentLineIsBlank = true;
-      } else if (character != '\r') {
-        currentLineIsBlank = false;
+      if (c == '\n') {
+        emptyLineReceived = true;
+      } else if (c != '\r') {
+        emptyLineReceived = false;
       }
     }
   }
 
   delay(1);
-  client.stop();
 
-  Serial.println(F("Client disconnected."));
+  client.stop();
 }
 
-// =====================================================
-// JSON RESPONSE
-// =====================================================
+// ============================================================
+// JSON response
+// ============================================================
 
-void sendJsonResponse(EthernetClient &client) {
-  int adcValue = currentAdcValue;
-
-  float voltage =
-    calculateVoltage(adcValue);
-
-  float currentMilliampere =
-    calculateCurrentMilliampere(voltage);
-
-  float percentage =
-    calculatePercentage(adcValue);
-
-  float waterHeightCm =
-    calculateWaterHeightCm(percentage);
-
-  float waterHeightMeter =
-    waterHeightCm / 100.0;
-
-  float liters =
-    calculateLiters(percentage);
-
-  bool sensorActive =
-    currentMilliampere >= 3.5 &&
-    currentMilliampere <= 22.0;
-
-  bool calibrationValid =
-    adcFull > adcEmpty;
-
-  // HTTP header
-  client.println(F("HTTP/1.1 200 OK"));
+void sendJsonResponse(
+  WiFiClient& client
+) {
   client.println(
-    F("Content-Type: application/json; charset=utf-8")
+    "HTTP/1.1 200 OK"
   );
-  client.println(F("Access-Control-Allow-Origin: *"));
-  client.println(F("Cache-Control: no-cache"));
-  client.println(F("Connection: close"));
+
+  client.println(
+    "Content-Type: application/json"
+  );
+
+  client.println(
+    "Connection: close"
+  );
+
+  client.println(
+    "Cache-Control: no-cache"
+  );
+
   client.println();
 
-  // JSON body
-  client.println(F("{"));
+  client.println("{");
 
-  client.println(F("  \"device\": {"));
-  client.println(F("    \"name\": \"water_tank\","));
-  client.println(F("    \"version\": \"1.4\","));
+  // ----------------------------------------------------------
+  // Device
+  // ----------------------------------------------------------
 
-  client.print(F("    \"uptime_seconds\": "));
-  client.println(millis() / 1000UL);
+  client.println(
+    "  \"device\": {"
+  );
 
-  client.println(F("  },"));
+  client.println(
+    "    \"name\": \"water_tank\","
+  );
 
-  client.println(F("  \"calibration\": {"));
+  client.println(
+    "    \"version\": \"2.1-r4wifi\","
+  );
 
-  client.print(F("    \"adc_empty\": "));
+  client.print(
+    "    \"uptime_seconds\": "
+  );
+
+  client.println(
+    millis() / 1000UL
+  );
+
+  client.println("  },");
+
+  // ----------------------------------------------------------
+  // Calibration
+  // ----------------------------------------------------------
+
+  client.println(
+    "  \"calibration\": {"
+  );
+
+  client.print(
+    "    \"adc_empty\": "
+  );
+
   client.print(adcEmpty);
-  client.println(F(","));
 
-  client.print(F("    \"adc_full\": "));
+  client.println(",");
+
+  client.print(
+    "    \"adc_full\": "
+  );
+
   client.print(adcFull);
-  client.println(F(","));
 
-  client.print(F("    \"valid\": "));
+  client.println(",");
+
+  client.print(
+    "    \"valid\": "
+  );
+
   client.println(
-    calibrationValid ? F("true") : F("false")
+    adcFull > adcEmpty ?
+    "true" :
+    "false"
   );
 
-  client.println(F("  },"));
+  client.println("  },");
 
-  client.println(F("  \"sensor\": {"));
+  // ----------------------------------------------------------
+  // Sensor
+  // ----------------------------------------------------------
 
-  client.print(F("    \"adc\": "));
-  client.print(adcValue);
-  client.println(F(","));
-
-  client.print(F("    \"voltage\": "));
-  client.print(voltage, 3);
-  client.println(F(","));
-
-  client.print(F("    \"current_mA\": "));
-  client.print(currentMilliampere, 3);
-  client.println(F(","));
-
-  client.print(F("    \"active\": "));
   client.println(
-    sensorActive ? F("true") : F("false")
+    "  \"sensor\": {"
   );
 
-  client.println(F("  },"));
-
-  client.println(F("  \"water\": {"));
-
-  client.print(F("    \"percentage\": "));
-  client.print(percentage, 1);
-  client.println(F(","));
-
-  client.print(F("    \"height_cm\": "));
-  client.print(waterHeightCm, 1);
-  client.println(F(","));
-
-  client.print(F("    \"height_m\": "));
-  client.print(waterHeightMeter, 3);
-  client.println(F(","));
-
-  client.print(F("    \"liters\": "));
-  client.println(liters, 1);
-
-  client.println(F("  }"));
-  client.println(F("}"));
-
-  printValuesToSerial(
-    adcValue,
-    voltage,
-    currentMilliampere,
-    percentage,
-    waterHeightCm,
-    liters
+  client.print(
+    "    \"adc\": "
   );
-}
 
-// =====================================================
-// SERIAL MONITOR OUTPUT
-// =====================================================
+  client.print(
+    currentAdcValue,
+    1
+  );
 
-void printValuesToSerial(
-  int adcValue,
-  float voltage,
-  float currentMilliampere,
-  float percentage,
-  float waterHeightCm,
-  float liters
-) {
-  Serial.print(F("ADC: "));
-  Serial.print(adcValue);
+  client.println(",");
 
-  Serial.print(F(" | Voltage: "));
-  Serial.print(voltage, 3);
-  Serial.print(F(" V"));
+  client.print(
+    "    \"voltage\": "
+  );
 
-  Serial.print(F(" | Current: "));
-  Serial.print(currentMilliampere, 3);
-  Serial.print(F(" mA"));
+  client.print(
+    currentVoltage,
+    3
+  );
 
-  Serial.print(F(" | Level: "));
-  Serial.print(percentage, 1);
-  Serial.print(F(" %"));
+  client.println(",");
 
-  Serial.print(F(" | Height: "));
-  Serial.print(waterHeightCm, 1);
-  Serial.print(F(" cm"));
+  client.print(
+    "    \"current_mA\": "
+  );
 
-  Serial.print(F(" | Volume: "));
-  Serial.print(liters, 1);
-  Serial.println(F(" L"));
-}
+  client.print(
+    currentCurrentMa,
+    3
+  );
 
-// =====================================================
-// AVERAGE ADC READING
-// =====================================================
+  client.println(",");
 
-int readAverageAdc() {
-  long total = 0;
+  client.print(
+    "    \"active\": "
+  );
 
-  // Discard the first reading for a more stable ADC result.
-  analogRead(sensorPin);
-  delay(2);
+  client.println(
+    sensorActive ?
+    "true" :
+    "false"
+  );
 
-  for (
-    int measurement = 0;
-    measurement < numberOfMeasurements;
-    measurement++
-  ) {
-    total += analogRead(sensorPin);
-    delay(measurementDelayMs);
-  }
+  client.println("  },");
 
-  return (int)(total / numberOfMeasurements);
-}
+  // ----------------------------------------------------------
+  // WiFi
+  // ----------------------------------------------------------
 
-// =====================================================
-// VOLTAGE CALCULATION
-// =====================================================
+  client.println(
+    "  \"wifi\": {"
+  );
 
-float calculateVoltage(int adcValue) {
-  return adcValue *
-         (arduinoReferenceVoltage / 1023.0);
-}
+  client.print(
+    "    \"connected\": "
+  );
 
-// =====================================================
-// CURRENT CALCULATION
-// =====================================================
+  client.println(
+    WiFi.status() ==
+    WL_CONNECTED ?
+    "true," :
+    "false,"
+  );
 
-float calculateCurrentMilliampere(float voltage) {
-  return (voltage / resistorOhm) * 1000.0;
-}
+  client.print(
+    "    \"rssi\": "
+  );
 
-// =====================================================
-// PERCENTAGE CALCULATION
-// =====================================================
+  client.println(
+    WiFi.status() ==
+    WL_CONNECTED ?
+    WiFi.RSSI() :
+    0
+  );
 
-float calculatePercentage(int adcValue) {
-  if (adcFull <= adcEmpty) {
-    return 0.0;
-  }
+  client.println("  },");
 
-  float percentage =
-    ((float)(adcValue - adcEmpty) /
-     (float)(adcFull - adcEmpty)) * 100.0;
+  // ----------------------------------------------------------
+  // Water
+  // ----------------------------------------------------------
 
-  if (percentage < 0.0) {
-    percentage = 0.0;
-  }
+  client.println(
+    "  \"water\": {"
+  );
 
-  if (percentage > 100.0) {
-    percentage = 100.0;
-  }
+  client.print(
+    "    \"percentage\": "
+  );
 
-  return percentage;
-}
+  client.print(
+    currentPercentage,
+    0
+  );
 
-// =====================================================
-// WATER HEIGHT CALCULATION
-// =====================================================
+  client.println(",");
 
-float calculateWaterHeightCm(float percentage) {
-  return tankHeightCm * percentage / 100.0;
-}
+  client.print(
+    "    \"height_cm\": "
+  );
 
-// =====================================================
-// VOLUME CALCULATION
-// =====================================================
+  client.print(
+    currentHeightCm,
+    0
+  );
 
-float calculateLiters(float percentage) {
-  return tankCapacityLiters * percentage / 100.0;
+  client.println(",");
+
+  client.print(
+    "    \"height_m\": "
+  );
+
+  client.print(
+    currentHeightM,
+    3
+  );
+
+  client.println(",");
+
+  client.print(
+    "    \"liters\": "
+  );
+
+  client.println(
+    currentLiters,
+    0
+  );
+
+  client.println("  }");
+
+  client.println("}");
 }
