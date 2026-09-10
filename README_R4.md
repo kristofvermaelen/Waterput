@@ -39,16 +39,6 @@ The LCD normally stays off. A short button press turns it on for 5 minutes. Hold
 | 1 | 16×2 I²C LCD | Common address is `0x27`, sometimes `0x3F` |
 | 1 | 16 mm metal waterproof momentary push button | Normally Open (NO), momentary/self-reset |
 | 1 | USB-C cable | For programming and/or powering the UNO R4 |
-| 1 | Enclosure or mounting plate | Optional but recommended |
-
-### Optional Parts
-
-| Quantity | Part | Notes |
-|---|---|---|
-| 1 | 100 nF capacitor | Optional filtering between A0 and GND |
-| Several | Jumper wires / terminal blocks | For reliable connections |
-| 1 | Fuse | Recommended on the 24 V sensor supply |
-| 1 | DIN rail enclosure | Useful for a permanent installation |
 
 ---
 
