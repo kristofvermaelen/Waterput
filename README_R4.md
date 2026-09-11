@@ -39,6 +39,8 @@ The LCD normally stays off. A short button press turns it on for 5 minutes. Hold
 | 1 | 16×2 I²C LCD | To display the water level |
 | 1 | 16 mm metal waterproof momentary push button | Normally Open (NO), momentary/self-reset |
 | 1 | USB-C cable | For programming and powering the UNO R4 |
+| 3 | WAGO connectors | To connect all cables|
+| 1 | 3D printed case and lid | |
 
 ---
 
