@@ -144,13 +144,6 @@ const char* wifiSsid = "YOUR_WIFI_NAME";
 const char* wifiPassword = "YOUR_WIFI_PASSWORD";
 ```
 
-Example:
-
-```cpp
-const char* wifiSsid = "HomeWiFi";
-const char* wifiPassword = "MyPassword";
-```
-
 After uploading the sketch, open the Serial Monitor at `115200 baud`.
 
 You should see output similar to:
@@ -202,10 +195,6 @@ followed by:
 No connection
 No IP address
 ```
-
-The Wi-Fi password is intentionally never shown on the LCD.
-
----
 
 ## Measurement Configuration
 
@@ -284,8 +273,6 @@ These values define:
 adcEmpty → 0%
 adcFull  → 100%
 ```
-
-Because ADC behavior can differ between boards, recalibrate after moving from an older Arduino Uno to the UNO R4 WiFi.
 
 ### Empty Calibration
 
