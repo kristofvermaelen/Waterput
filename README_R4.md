@@ -497,50 +497,6 @@ This is useful for calibration, wiring checks, sensor diagnostics and Wi-Fi trou
 
 ---
 
-## Recommended Installation Notes
-
-- Use screw terminals instead of loose jumper wires
-- Keep the 24 V sensor wiring separate from USB and I²C wiring
-- Use a suitable enclosure
-- Add strain relief to sensor cables
-- Add a small fuse to the 24 V supply
-- Keep the 220 Ω resistor connection close to the Arduino analog input
-- Optionally place a 100 nF capacitor between A0 and GND for additional filtering
-- Use a router DHCP reservation for the Arduino
-- Do not expose the HTTP endpoint directly to the public internet
-
----
-
-## Safety
-
-The sensor side uses 24 V DC.
-
-Before powering the circuit:
-
-1. Verify the 24 V supply polarity with a multimeter
-2. Confirm Arduino GND is connected to 24 V 0 V
-3. Confirm 24 V is **not** connected to Arduino 5 V
-4. Confirm the sensor signal at A0 cannot exceed the Arduino input range
-5. Confirm the 220 Ω resistor is correctly connected
-
----
-
-## Future Improvements
-
-- Use the higher-resolution UNO R4 ADC
-- Add an ADS1115 external ADC
-- Add a configuration webpage
-- Store calibration values in flash memory
-- Add a `/percentage` endpoint for simplified integrations
-- Add MQTT support
-- Add OTA firmware updates
-- Add historical logging
-- Add sensor fault alarms
-- Add a custom web dashboard
-- Add Home Assistant integration
-
----
-
 ## License
 
 This project can be released under the MIT License or another license of your choice.
@@ -549,18 +505,6 @@ If you publish it publicly, add a `LICENSE` file to the repository.
 
 ---
 
-## Suggested Repository Structure
-
-```text
-water-tank-monitor/
-├── README.md
-├── water_tank_monitor.ino
-├── LICENSE
-└── docs/
-    └── wiring-diagram.png
-```
-
----
 
 ## Project Goal
 
