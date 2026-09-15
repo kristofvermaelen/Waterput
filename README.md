@@ -511,3 +511,9 @@ If you publish it publicly, add a `LICENSE` file to the repository.
 ## Project Goal
 
 This project is designed as a simple, stable and readable residential water-tank monitor with local Wi-Fi access, Loxone integration and easy on-device diagnostics.
+
+## Pictures
+
+<img src="Images/IMG_6869.jpg" alt="Description" width="500">
+<img src="Images/IMG_6870.jpg" alt="Description" width="500">
+<img src="Images/IMG_6871.jpg" alt="Description" width="500">
