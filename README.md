@@ -36,7 +36,7 @@ The LCD normally stays off. A short button press turns it on for 5 minutes. Hold
 | 1 | 4–20 mA hydrostatic level sensor | Example: 0–5 m water level sensor |
 | 1 | 24 V DC power supply | Powers the 4–20 mA sensor |
 | 1 | 220 Ω resistor | Converts 4–20 mA loop current to a measurable voltage |
-| 1 | 16×2 I²C LCD | To display the water level https://www.amazon.com.be/-/en/Freenove-1602-Display-Serial-Screen/dp/B0B76YGDV4/ref=asc_df_B0B76YGDV4?mcid=53d33fabc99133bcb27a06e19abf47b7&tag=begogshpadde-21&linkCode=df0&hvadid=744519782565&hvpos=&hvnetw=g&hvrand=14653752331755273813&hvpone=&hvptwo=&hvqmt=&hvdev=c&hvdvcmdl=&hvlocint=&hvlocphy=9221862&hvtargid=pla-1982300595807&hvocijid=14653752331755273813-B0B76YGDV4-&hvexpln=0&language=en_GB&gad_source=1&th=1 |
+| 1 | 16×2 I²C LCD | To display the water level https://www.amazon.com.be/-/en/Freenove-1602-Display-Serial-Screen/dp/B0B76YGDV4 |
 | 1 | 16 mm metal waterproof momentary push button | Normally Open (NO), momentary/self-reset |
 | 1 | USB-C cable | For programming and powering the UNO R4 |
 | 3 | WAGO connectors | To connect all cables|
