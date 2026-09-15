@@ -33,11 +33,11 @@ The LCD normally stays off. A short button press turns it on for 5 minutes. Hold
 | Quantity | Part | Notes |
 |---|---|---|
 | 1 | Arduino UNO R4 WiFi | Main controller with built-in Wi-Fi |
-| 1 | 4–20 mA hydrostatic level sensor | Example: 0–5 m water level sensor |
+| 1 | 4–20 mA hydrostatic level sensor | https://www.amazon.com.be/-/en/Liquid-Sensor-Transmitter-4-20mA-Detection/dp/B07G4B25BW/  |
 | 1 | 24 V DC power supply | Powers the 4–20 mA sensor |
 | 1 | 220 Ω resistor | Converts 4–20 mA loop current to a measurable voltage |
 | 1 | 16×2 I²C LCD | To display the water level https://www.amazon.com.be/-/en/Freenove-1602-Display-Serial-Screen/dp/B0B76YGDV4 |
-| 1 | 16 mm metal waterproof momentary push button | Normally Open (NO), momentary/self-reset |
+| 1 | 16 mm metal waterproof momentary push button | https://www.amazon.com.be/dp/B0DMFF8RBJ?ref_=pe_112122601_1111480491_t_fed_asin_title&th=1 |
 | 1 | USB-C cable | For programming and powering the UNO R4 |
 | 3 | WAGO connectors | To connect all cables|
 | 1 | 3D printed case and lid | |
