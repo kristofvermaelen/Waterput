@@ -1,4 +1,4 @@
-<img width="412" height="27" alt="image" src="https://github.com/user-attachments/assets/0716599e-4135-4c17-bb50-c36836404045" /># Water Tank Monitor — Arduino UNO R4 WiFi
+# Water Tank Monitor — Arduino UNO R4 WiFi
 
 A Wi-Fi connected water tank monitor built with an **Arduino UNO R4 WiFi**, a **4–20 mA hydrostatic level sensor**, an **I²C 16×2 LCD**, and a **momentary push button**.
 
