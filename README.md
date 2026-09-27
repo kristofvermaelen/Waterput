@@ -236,8 +236,6 @@ This keeps the ADC scale compatible with the previous Arduino Uno calibration:
 0 ... 1023
 ```
 
-The UNO R4 can later be changed to a higher ADC resolution, but the tank must then be recalibrated.
-
 ---
 
 ## Reference Voltage
