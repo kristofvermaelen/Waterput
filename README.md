@@ -21,7 +21,8 @@ The LCD normally stays off. A short button press turns it on for 5 minutes. Hold
 - LCD backlight normally off
 - Short button press: LCD turns on for 5 minutes
 - Long button press for 5 seconds: shows Wi-Fi status, SSID and IP address
-- Automatic Wi-Fi reconnect
+- Automatic Wi-Fi reconnect; LCD and button keep working when Wi-Fi is unavailable
+- Sensor fault detection (cable break / short circuit)
 - Suitable for Loxone Virtual HTTP Input integration
 
 ---
@@ -139,7 +140,7 @@ This is only a compatibility warning if the sketch still compiles. If the LCD do
 
 ## Wi-Fi Configuration
 
-Edit these lines in the sketch:
+Open `waterput_LCD_Uno_R4_WIFI/waterput_LCD_Uno_R4_WIFI.ino` in the Arduino IDE and edit these lines:
 
 ```cpp
 const char* wifiSsid = "YOUR_WIFI_NAME";
@@ -161,6 +162,8 @@ Signal strength: -52 dBm
 Open in browser: http://172.16.42.81
 HTTP server started.
 ```
+
+If Wi-Fi is unavailable at startup, the Arduino continues without network after 15 seconds and keeps retrying every 10 seconds in the background. The LCD and button work in the meantime.
 
 For reliable home automation integration, it is recommended to create a **DHCP reservation** in your router so the Arduino always receives the same IP address.
 
@@ -340,7 +343,7 @@ The Arduino returns JSON similar to:
 {
   "device": {
     "name": "water_tank",
-    "version": "2.1-r4wifi",
+    "version": "2.2-r4wifi",
     "uptime_seconds": 1085
   },
   "calibration": {
@@ -369,6 +372,16 @@ The Arduino returns JSON similar to:
 
 The JSON request does **not** trigger a new ADC measurement. It always returns the latest averaged sensor measurement, which is updated every 5 seconds.
 
+### Sensor Fault
+
+If the loop current is below 3 mA (cable break, no 24 V) or above 21 mA (short circuit, sensor fault):
+
+- `sensor.active` is `false`
+- `water.percentage`, `water.height_cm`, `water.height_m` and `water.liters` are `-1`
+- The LCD shows `SENSOR ERROR` and the measured loop current
+
+This prevents a broken sensor from being reported as an empty tank. In Loxone, treat a value of `-1` as an alarm.
+
 ---
 
 ## JSON Fields
@@ -396,7 +409,7 @@ The JSON request does **not** trigger a new ADC measurement. It always returns t
 | `sensor.adc` | Averaged ADC value |
 | `sensor.voltage` | Calculated sensor voltage |
 | `sensor.current_mA` | Calculated 4–20 mA loop current |
-| `sensor.active` | Basic sensor-active check |
+| `sensor.active` | `true` when the loop current is within 3–21 mA; `false` on a sensor fault |
 
 ### Wi-Fi
 
