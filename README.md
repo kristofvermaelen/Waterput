@@ -11,8 +11,10 @@ The LCD normally stays off. A short button press turns it on for 5 minutes. Hold
 ## Features
 
 - 4–20 mA hydrostatic level sensor input
-- 100 ADC samples averaged per measurement
+- Bursts of 100 ADC samples, with the 10 highest and 10 lowest discarded
 - New sensor measurement every 5 seconds
+- 5-minute rolling average to smooth out water surface movement and noise
+- Trend arrow on the LCD (rising, falling or steady over the last 10 minutes)
 - Wi-Fi connection using the UNO R4 WiFi
 - HTTP JSON endpoint on port 80
 - Water level as percentage, height and liters
@@ -207,13 +209,30 @@ The important settings are:
 
 ```cpp
 const int numberOfMeasurements = 100;
+const int numberOfTrimmedMeasurements = 10;
+const int smoothingWindowSize = 60;
 const unsigned long sensorMeasurementIntervalMs = 5000UL;
 ```
 
 This means:
 
-- 100 ADC samples are averaged for every measurement
-- A new averaged sensor value is calculated every 5 seconds
+- Every 5 seconds, a burst of 100 ADC samples is taken
+- The samples are sorted, and the 10 lowest and 10 highest are discarded to reject spikes (e.g. Wi-Fi transmit noise)
+- The remaining 80 samples are averaged into one burst value
+- The last 60 burst values (60 × 5 s = 5 minutes) are averaged in a rolling window
+
+The reported value (`sensor.adc` and the water fields) is the 5-minute rolling average. It updates every 5 seconds, but a change in water level takes up to 5 minutes to be fully reflected. After a restart, the average is built from the bursts collected so far until the window is full. The latest burst without the rolling average is available as `sensor.adc_raw`.
+
+The sensor fault check uses the latest burst, so a cable break is reported at once. During a fault the rolling average is reset, so fault values are never mixed into the level.
+
+The trend arrow compares the level now with the level 10 minutes ago, sampled once per minute:
+
+```cpp
+const unsigned long trendSampleIntervalMs = 60000UL;
+const float trendThresholdPercent = 1.0;
+```
+
+A change of at least 1 percentage point shows a rising or falling arrow; otherwise a dash. During the first 10 minutes after a restart the trend is steady.
 
 The LCD refresh interval is:
 
@@ -315,9 +334,11 @@ The current sketch assumes a linear relationship between water height and volume
 During normal operation, the LCD shows:
 
 ```text
-13% 1298L
+13% 1298L      ↑
 Height: 33cm
 ```
+
+The last character of line 1 is the trend: an arrow up (rising), an arrow down (falling) or a dash (steady). The arrows are custom LCD characters.
 
 The LCD backlight is normally off. A short button press turns it on for 5 minutes.
 
@@ -343,7 +364,7 @@ The Arduino returns JSON similar to:
 {
   "device": {
     "name": "water_tank",
-    "version": "2.2-r4wifi",
+    "version": "2.3-r4wifi",
     "uptime_seconds": 1085
   },
   "calibration": {
@@ -353,6 +374,7 @@ The Arduino returns JSON similar to:
   },
   "sensor": {
     "adc": 281.0,
+    "adc_raw": 281.6,
     "voltage": 1.264,
     "current_mA": 5.743,
     "active": true
@@ -365,12 +387,13 @@ The Arduino returns JSON similar to:
     "percentage": 14,
     "height_cm": 34,
     "height_m": 0.341,
-    "liters": 1362
+    "liters": 1362,
+    "trend": "steady"
   }
 }
 ```
 
-The JSON request does **not** trigger a new ADC measurement. It always returns the latest averaged sensor measurement, which is updated every 5 seconds.
+The JSON request does **not** trigger a new ADC measurement. It always returns the latest 5-minute rolling average, which is updated every 5 seconds.
 
 ### Sensor Fault
 
@@ -406,7 +429,8 @@ This prevents a broken sensor from being reported as an empty tank. In Loxone, t
 
 | Field | Description |
 |---|---|
-| `sensor.adc` | Averaged ADC value |
+| `sensor.adc` | Rolling-average ADC value (5 minutes) |
+| `sensor.adc_raw` | Latest burst ADC value (trimmed average of 100 samples, without the rolling average) |
 | `sensor.voltage` | Calculated sensor voltage |
 | `sensor.current_mA` | Calculated 4–20 mA loop current |
 | `sensor.active` | `true` when the loop current is within 3–21 mA; `false` on a sensor fault |
@@ -426,6 +450,7 @@ This prevents a broken sensor from being reported as an empty tank. In Loxone, t
 | `water.height_cm` | Water height in cm |
 | `water.height_m` | Water height in m |
 | `water.liters` | Calculated tank volume |
+| `water.trend` | `rising`, `falling` or `steady`: change over the last 10 minutes, threshold 1 percentage point |
 
 ---
 
